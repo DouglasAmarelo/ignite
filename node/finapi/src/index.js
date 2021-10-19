@@ -47,6 +47,18 @@ const getbalance = account => {
   return balance;
 };
 
+const formatDate = date => new Date(date + ' 00:00');
+
+const filterStatementByDate = ({ account, date }) => {
+  const statement = account.statement.filter(statement => {
+    if (statement.created_at.toDateString() === new Date(date).toDateString()) {
+      return statement;
+    }
+  });
+
+  return statement;
+};
+
 // Criar uma conta
 app.post('/account', (req, res) => {
   const { cpf, name } = req.body;
@@ -114,11 +126,25 @@ app.delete('/account', (req, res) => {
   });
 });
 
-// Buscar Extrato
+// Buscar extrato
 app.get('/statement', checkIfAccountExists, (req, res) => {
   const { accountFound } = req;
 
   return res.json({ statement: accountFound?.statement });
+});
+
+// Buscar extrato (por data)
+app.get('/statement/date', checkIfAccountExists, (req, res) => {
+  const { accountFound } = req;
+  const { date } = req.query;
+
+  const formatedDate = formatDate(date);
+  const statement = filterStatementByDate({
+    account: accountFound,
+    date: formatedDate,
+  });
+
+  return res.json({ statement });
 });
 
 // Depositar
@@ -140,9 +166,12 @@ app.post('/deposit', checkIfAccountExists, (req, res) => {
 
   accountFound.statement.push(newStatement);
 
+  const balance = getbalance(accountFound);
+
   return res.json({
     message: `The deposit of R$ ${amount} was made`,
     statement: newStatement,
+    balance,
   });
 });
 
