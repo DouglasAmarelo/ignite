@@ -14,26 +14,6 @@ app.use(express.json());
 
 let CUSTOMERS = [];
 
-// Middlewares
-const checkIfAccountExists = (req, res, next) => {
-  const { cpf } = req.headers;
-  const cleanCPF = String(cpf).replace(/\./gim, '');
-
-  if (!cleanCPF) {
-    return res.status(400).json({ error: 'CPF is a required value' });
-  }
-
-  const accountFound = CUSTOMERS.find(account => account.cpf === cleanCPF);
-
-  if (!accountFound) {
-    return res.status(400).json({ error: 'Client not found' });
-  }
-
-  req.accountFound = accountFound;
-
-  return next();
-};
-
 // Helpers
 const getbalance = account => {
   const balance = account.statement.reduce((acc, curr) => {
@@ -57,6 +37,26 @@ const filterStatementByDate = ({ account, date }) => {
   });
 
   return statement;
+};
+
+// Middlewares
+const checkIfAccountExists = (req, res, next) => {
+  const { cpf } = req.headers;
+  const cleanCPF = String(cpf).replace(/\./gim, '');
+
+  if (!cleanCPF) {
+    return res.status(400).json({ error: 'CPF is a required value' });
+  }
+
+  const accountFound = CUSTOMERS.find(account => account.cpf === cleanCPF);
+
+  if (!accountFound) {
+    return res.status(400).json({ error: 'Account not found' });
+  }
+
+  req.accountFound = accountFound;
+
+  return next && next();
 };
 
 // Criar uma conta
@@ -89,48 +89,45 @@ app.post('/account', (req, res) => {
 });
 
 // Buscar conta
-app.get('/account', (req, res) => {
-  const { cpf } = req.body;
-  const cleanCPF = String(cpf).replace(/\./gim, '');
+app.get('/account', checkIfAccountExists, (req, res) => {
+  const { accountFound } = req;
 
-  if (!cleanCPF) {
-    return res.status(400).json({ error: 'CPF is a required value' });
-  }
-
-  const accountFound = CUSTOMERS.find(account => account.cpf === cleanCPF);
-
-  return accountFound
-    ? res.json({ account: accountFound })
-    : res.status(404).json({ error: 'Account Not Found' });
+  return res.json(accountFound);
 });
 
 // Deletar conta
-app.delete('/account', (req, res) => {
-  const { cpf } = req.body;
-  const cleanCPF = String(cpf).replace(/\./gim, '');
+app.delete('/account', checkIfAccountExists, (req, res) => {
+  const { accountFound } = req;
 
-  if (!cleanCPF) {
-    return res.status(400).json({ error: 'CPF is a required value' });
-  }
-
-  const accountFound = CUSTOMERS.find(account => account.cpf === cleanCPF);
-
-  if (!accountFound) {
-    return res.status(404).json({ error: 'Account Not Found' });
-  }
-
-  CUSTOMERS = CUSTOMERS.filter(account => account.cpf !== cleanCPF);
+  CUSTOMERS = CUSTOMERS.filter(account => account.cpf !== accountFound.cpf);
 
   return res.json({
     message: `The account of the client [${accountFound.name}] with the CPF [${accountFound.cpf}] was deleted`,
   });
 });
 
+// Atualizar conta
+app.put('/account', checkIfAccountExists, (req, res) => {
+  const { name } = req.body;
+  const { accountFound } = req;
+
+  if (!name) {
+    return res.status(400).json({ error: 'Name is a required value' });
+  }
+
+  accountFound.name = name;
+
+  return res.json(accountFound);
+});
+
 // Buscar extrato
 app.get('/statement', checkIfAccountExists, (req, res) => {
   const { accountFound } = req;
 
-  return res.json({ statement: accountFound?.statement });
+  return res.json({
+    balance: getbalance(accountFound),
+    statement: accountFound?.statement,
+  });
 });
 
 // Buscar extrato (por data)
@@ -157,7 +154,7 @@ app.post('/deposit', checkIfAccountExists, (req, res) => {
   }
 
   const newStatement = {
-    description: `=> entrada: ${description}`,
+    description: `(+) entrada: ${description}`,
     amount,
     id: uuidv4(),
     type: 'credit',
@@ -191,7 +188,7 @@ app.post('/withdraw', checkIfAccountExists, (req, res) => {
   }
 
   const newStatement = {
-    description: '<= saída',
+    description: '(-) saída',
     amount,
     id: uuidv4(),
     type: 'debit',
